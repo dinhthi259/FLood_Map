@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mô phỏng tránh ngập - đúng map thiết kế</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Chỉ đường tránh ngập — Demo (theo map của bạn)</h1>
+  </header>
+
+  <div class="controls">
+    <button id="setStart">Chọn điểm xuất phát</button>
+    <button id="setEnd">Chọn điểm đích</button>
+    <button id="simulateFlood">Mô phỏng hồ ngập</button>
+    <button id="clearFlood">Bỏ ngập</button>
+    <button id="findPath">Tìm đường</button>
+    <button id="resetAll">Làm mới</button>
+  </div>
+
+  <div class="canvas-wrap">
+    <canvas id="mapCanvas" width="540" height="810"></canvas>
+  </div>
+
+  <div class="legend">
+    <div><span class="swatch road"></span> Đường (0)</div>
+    <div><span class="swatch wall"></span> Tường (1) - không đi qua</div>
+    <div><span class="swatch lake"></span> Hồ / Ngập (2) - không đi qua</div>
+    <div><span class="swatch start"></span> Start</div>
+    <div><span class="swatch end"></span> End</div>
+    <div><span class="swatch route"></span> Tuyến (A*)</div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
