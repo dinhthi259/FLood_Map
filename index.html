@@ -1,38 +1,569 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="vi">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Mô phỏng tránh ngập - đúng map thiết kế</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <header>
-    <h1>Chỉ đường tránh ngập — Demo (theo map của bạn)</h1>
-  </header>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Mô phỏng chỉ đường tránh ngập</title>
 
-  <div class="controls">
-    <button id="setStart">Chọn điểm xuất phát</button>
-    <button id="setEnd">Chọn điểm đích</button>
-    <button id="simulateFlood">Mô phỏng hồ ngập</button>
-    <button id="clearFlood">Bỏ ngập</button>
-    <button id="findPath">Tìm đường</button>
-    <button id="resetAll">Làm mới</button>
-  </div>
+    <style>
+      /* reset & base */
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 18px;
+        font-family: "Segoe UI", Roboto, Arial, sans-serif;
+        background: #f8fcf7;
+        color: #1f3b1f;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
 
-  <div class="canvas-wrap">
-    <canvas id="mapCanvas" width="540" height="810"></canvas>
-  </div>
+      header {
+        text-align: center;
+        margin-bottom: 10px;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 20px;
+        color: #1f8a2e;
+      }
 
-  <div class="legend">
-    <div><span class="swatch road"></span> Đường (0)</div>
-    <div><span class="swatch wall"></span> Tường (1) - không đi qua</div>
-    <div><span class="swatch lake"></span> Hồ / Ngập (2) - không đi qua</div>
-    <div><span class="swatch start"></span> Start</div>
-    <div><span class="swatch end"></span> End</div>
-    <div><span class="swatch route"></span> Tuyến (A*)</div>
-  </div>
+      /* main layout: left column (search + info) + right map */
+      #main-container {
+        width: 95%;
+        max-width: 1300px;
+        display: flex;
+        gap: 24px;
+        align-items: flex-start; /* important: align top so left panel stack stays top */
+        justify-content: center;
+      }
 
-  <script src="script.js"></script>
-</body>
+      /* left column: fixed width */
+      #left-panel {
+        width: 360px; /* enough width so route-info fits */
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        align-items: stretch;
+      }
+
+      /* search card */
+      #search-container {
+        background: #fff;
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 6px 18px rgba(6, 50, 20, 0.06);
+      }
+      #search-container input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #e1e6e3;
+        margin-bottom: 10px;
+        font-size: 15px;
+      }
+      #search-container button {
+        width: 100%;
+        background: #59c241;
+        color: #fff;
+        border: none;
+        padding: 11px;
+        border-radius: 8px;
+        font-weight: 700;
+        font-size: 16px;
+        cursor: pointer;
+      }
+      #search-container button:hover {
+        background: #4bb036;
+      }
+
+      /* suggestions box */
+      #suggestions {
+        margin-top: 8px;
+        display: none;
+        background: #fff;
+        border: 1px solid #e6efe8;
+        border-radius: 8px;
+        max-height: 160px;
+        overflow: auto;
+        box-shadow: 0 6px 18px rgba(6, 50, 20, 0.04);
+      }
+      #suggestions div {
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+      #suggestions div:hover {
+        background: #f3f8f3;
+      }
+
+      /* route info - visible beneath search, large & clear */
+      #route-info {
+        display: none; /* show when search done */
+        background: #ecf8ee;
+        border-left: 6px solid #59c241;
+        border-radius: 12px;
+        padding: 18px;
+        box-shadow: 0 6px 18px rgba(6, 50, 20, 0.05);
+        width: 100%;
+        min-height: 68px;
+        align-items: center;
+        animation: fadeIn 0.28s ease;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-6px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      #route-info .left {
+        flex: 1;
+      }
+      #route-info .left .start {
+        font-weight: 800;
+        font-size: 18px;
+        color: #2e7d32;
+        margin-bottom: 6px;
+      }
+      #route-info .left .end {
+        color: #556;
+        font-size: 15px;
+      }
+      #route-info .right {
+        width: 132px;
+        text-align: right;
+      }
+      #route-info .right .time {
+        font-weight: 800;
+        font-size: 18px;
+        color: #2e7d32;
+      }
+      #route-info .right .dist {
+        color: #556;
+        font-size: 15px;
+        margin-top: 4px;
+      }
+
+      /* canvas wrap (takes remaining width) */
+      .canvas-wrap {
+        flex: 1 1 auto; /* expand to take the rest of line */
+
+        border-radius: 12px;
+        padding: 10px;
+        box-shadow: 0 6px 18px rgba(6, 50, 20, 0.04);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-width: 480px; /* ensure map not too small */
+      }
+      canvas#mapCanvas {
+        display: block;
+        border-radius: 8px;
+        border: 3px solid #fff;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12) inset,
+          0 2px 6px rgba(0, 0, 0, 0.06);
+        background: #fff;
+        max-width: 100%;
+      }
+
+      /* legend under map */
+      .legend {
+        margin-top: 12px;
+        font-size: 13px;
+        color: #444;
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .legend .swatch {
+        width: 18px;
+        height: 18px;
+        border-radius: 4px;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        display: inline-block;
+        vertical-align: middle;
+      }
+      .popup-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        justify-content: center;
+        align-items: center;
+        z-index: 10000;
+      }
+
+      .popup-box {
+        background: #fff;
+        padding: 20px;
+        border-radius: 12px;
+        width: 360px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+        text-align: center;
+        animation: fadeIn 0.3s ease;
+      }
+
+      .popup-box h3 {
+        margin-bottom: 14px;
+        color: #2e7d32;
+      }
+
+      .popup-btn {
+        width: 100%;
+        padding: 10px;
+        background: red;
+        border: none;
+        color: #fff;
+        border-radius: 6px;
+        margin: 6px 0;
+        font-weight: bold;
+        cursor: pointer;
+      }
+
+      .popup-btn:hover {
+        background: #4bb036;
+      }
+      .popup-close {
+        margin-top: 8px;
+        background: #ccc;
+        color: #000;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      .popup-box input,
+      .popup-box select,
+      .popup-box textarea {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        margin-bottom: 10px;
+      }
+      #confirmRescueBtn,
+      #huy {
+        padding: 10px 18px;
+        font-size: 16px;
+        font-weight: 600;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin: 8px;
+      }
+
+      /* Nút Gửi yêu cầu */
+      #confirmRescueBtn {
+        background-color: #59c241;
+        color: white;
+        box-shadow: 0 4px 8px rgba(89, 194, 65, 0.3);
+      }
+
+      #confirmRescueBtn:hover {
+        background-color: #4cad38;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(89, 194, 65, 0.4);
+      }
+
+      /* Nút Hủy */
+      #huy {
+        background-color: #e0e0e0;
+        color: #333;
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+      }
+
+      #huy:hover {
+        background-color: #ccc;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.15);
+      }
+
+      /* Căn chỉnh 2 nút nằm ngang giữa popup */
+      .popup-buttons {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-top: 15px;
+      }
+
+      .form-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+      }
+      .swatch.road {
+        background: #bfbfbf;
+      }
+      .swatch.wall {
+        background: #fff;
+      }
+      .swatch.lake {
+        background: #a8d8ea;
+      }
+      .swatch.route {
+        background: #007aff;
+      }
+      /* ====== POPUP CẢNH BÁO NGẬP ====== */
+      .flood-notice {
+        position: fixed;
+        inset: 0;
+        background: rgba(255, 0, 0, 0.85);
+        color: white;
+        display: none;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        z-index: 9999;
+        animation: fadeIn 0.5s ease;
+      }
+
+      .flood-notice-content {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.6);
+        padding: 50px 70px;
+        border-radius: 20px;
+        box-shadow: 0 0 30px rgba(255, 255, 255, 0.4);
+        max-width: 650px;
+        width: 90%;
+        color: #fff;
+      }
+
+      .flood-notice h2 {
+        font-size: 2.3em;
+        margin-bottom: 20px;
+        text-shadow: 3px 3px 8px black;
+      }
+
+      .flood-notice p {
+        font-size: 1.3em;
+        line-height: 1.6em;
+        margin-bottom: 30px;
+      }
+
+      #closeNoticeBtn {
+        background: #fff;
+        color: #c0392b;
+        border: none;
+        padding: 14px 36px;
+        font-size: 1.1em;
+        font-weight: bold;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      #closeNoticeBtn:hover {
+        background: #ffe4e1;
+        transform: scale(1.05);
+      }
+
+      /* responsive */
+      @media (max-width: 980px) {
+        #main-container {
+          flex-direction: column;
+          align-items: center;
+        }
+        #left-panel {
+          width: 92%;
+          max-width: 480px;
+        }
+        .canvas-wrap {
+          width: 92%;
+          min-width: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <!-- Thông báo nhỏ khi có ngập -->
+      <div id="floodNotice" class="flood-notice">
+        <div class="flood-notice-content">
+          <h2>⚠️ CẢNH BÁO NGẬP LỤT ⚠️</h2>
+          <p>
+            Một vài khu vực hiện đang bị ngập. Hãy quan sát bản đồ và lựa chọn tuyến đường
+            an toàn hoặc yêu cầu cứu hộ nếu cần thiết.
+          </p>
+          <button id="closeNoticeBtn">Đã hiểu</button>
+        </div>
+      </div>
+
+      <h1>Hệ thống đề xuất đường đi</h1>
+      <div style="margin-top: 8px">
+        <button class="popup-btn" id="btnRescue">
+          Yêu cầu cứu hộ khẩn cấp
+        </button>
+      </div>
+      <div style="margin-top: 8px">
+        <button id="toggleFloodBtn">Chế độ ngập: TẮT</button>
+      </div>
+    </header>
+
+    <div id="main-container">
+      <!-- left column: search + route info -->
+      <div id="left-panel">
+        <div id="search-container">
+          <input id="startInput" type="text" placeholder="Vị trí của bạn..." />
+          <input id="endInput" type="text" placeholder="Điểm đến..." />
+          <button id="findPathBtn">Tìm đường</button>
+          <div id="suggestions"></div>
+        </div>
+
+        <!-- route info (under search) -->
+        <div id="route-info">
+          <div class="left">
+            <div class="start" id="routeStart">Điểm xuất phát</div>
+            <div class="end" id="routeEnd">Điểm đích</div>
+          </div>
+          <div class="right">
+            <div class="time" id="routeTime">-- phút</div>
+            <div class="dist" id="routeDistance">-- km</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- right: map -->
+      <div class="canvas-wrap">
+        <canvas id="mapCanvas" width="540" height="810"></canvas>
+        <div class="legend">
+          <div><span class="swatch road"></span> Đường (0)</div>
+          <div><span class="swatch wall"></span> Nhà / Tường (1)</div>
+          <div><span class="swatch lake"></span> Hồ / Ngập (2)</div>
+          <div>
+            <span class="swatch route"></span> Tuyến đường (xanh đậm = chọn)
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Popup Loading -->
+    <div
+      id="loadingPopup"
+      style="
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.8);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+        font-size: 22px;
+        color: #333;
+        font-weight: bold;
+        flex-direction: column;
+      "
+    >
+      <div
+        class="spinner"
+        style="
+          border: 4px solid #ccc;
+          border-top: 4px solid #59c241;
+          border-radius: 50%;
+          width: 40px;
+          height: 40px;
+          animation: spin 1s linear infinite;
+          margin-bottom: 10px;
+        "
+      ></div>
+      Đang tìm kiếm tuyến đường ngắn nhất...
+    </div>
+
+    <!-- Popup form cứu hộ -->
+    <div id="rescueFormPopup" class="popup-overlay">
+      <div class="popup-box">
+        <h3>Yêu cầu cứu hộ khẩn cấp</h3>
+        <input type="text" id="rescueName" placeholder="Họ và tên" />
+        <input type="text" id="rescuePhone" placeholder="Số điện thoại" />
+        <input type="text" id="rescueAddress" placeholder="Địa chỉ" />
+        <textarea
+          id="rescueDesc"
+          rows="3"
+          placeholder="Nội dung cứu hộ"
+        ></textarea>
+        <div class="form-actions">
+          <button id="confirmRescueBtn">Gửi yêu cầu</button>
+          <button id="huy" class="popup-close">Hủy</button>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+
+    <script src="script.js"></script>
+    <script>
+      // Hiển thị thông tin tuyến đường (demo)
+      document.getElementById("findPathBtn").addEventListener("click", () => {
+        const start = document.getElementById("startInput").value.trim();
+        const end = document.getElementById("endInput").value.trim();
+        // Khi nhấn tìm đường, hiện popup khác nếu đang ngập
+        const loadingPopup = document.getElementById("loadingPopup");
+        const spinner = loadingPopup.querySelector(".spinner");
+        if (isFloodMode) {
+          loadingPopup.innerHTML = `
+      <div class="spinner"
+        style="
+          border:4px solid #ccc;
+          border-top:4px solid #59c241;
+          border-radius:50%;
+          width:40px;height:40px;
+          animation:spin 1s linear infinite;
+          margin-bottom:10px;">
+      </div>
+      Vì thời tiết mưa to, một vài tuyến đường bị ngập.<br>
+      Đang tìm tuyến đường tối ưu nhất!`;
+        } else {
+          loadingPopup.innerHTML = `
+      <div class="spinner"
+        style="
+          border:4px solid #ccc;
+          border-top:4px solid #59c241;
+          border-radius:50%;
+          width:40px;height:40px;
+          animation:spin 1s linear infinite;
+          margin-bottom:10px;">
+      </div>
+      Đang tìm kiếm tuyến đường ngắn nhất...`;
+        }
+
+        loadingPopup.style.display = "flex";
+        const cellCount = Math.floor(Math.random() * 30) + 10;
+        const distance = cellCount * 0.1; // km
+        const speed = 30; // km/h
+        const time = distance / speed;
+        const minutes = Math.round(time * 60);
+
+        document.getElementById("routeStart").innerText =
+          start || "Chưa chọn điểm xuất phát";
+        document.getElementById("routeEnd").innerText =
+          end || "Chưa chọn điểm đến";
+        document.getElementById("routeTime").innerText = `${minutes} phút`;
+        document.getElementById(
+          "routeDistance"
+        ).innerText = `${distance.toFixed(1)} km`;
+
+        document.getElementById("route-info").style.display = "flex";
+      });
+    </script>
+  </body>
 </html>
